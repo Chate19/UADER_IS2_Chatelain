@@ -1,0 +1,50 @@
+MEMORIA TÉCNICA: TRABAJO PRÁCTICO N°3 - PATRONES DE CREACIÓN
+Alumno: Agustin Chatelain
+Carrera: Lic. en Sistemas / Analista de Sistemas
+Profesor: Dr. Pedro Colla
+-----------------------------------------------------------
+
+DESCRIPCIÓN GENERAL:
+El presente trabajo resuelve una serie de problemas de lógica y creación de objetos mediante la aplicación de patrones de diseño clásicos (GoF). Se ha optado por una estructura modular, separando cada solución en archivos independientes para cumplir con los principios de alta cohesión y bajo acoplamiento.
+
+DETALLE DE IMPLEMENTACIÓN POR PUNTO:
+
+PUNTO 1: PATRÓN SINGLETON (FACTORIAL)
+- Problema: Garantizar una única instancia para el cálculo de factorial.
+- Solución: Se implementó la clase 'FactorialService' utilizando el método __new__ para controlar la instanciación. Esto asegura que todas las llamadas al sistema utilicen el mismo objeto en memoria, optimizando recursos.
+
+PUNTO 2: PATRÓN SINGLETON (IMPUESTOS)
+- Problema: Centralizar el cálculo de impuestos (IVA, IIBB, Tasas).
+- Solución: Se aplicó Singleton en la clase 'CalculadoraImpuestos'. Al ser un motor de cálculo que no mantiene un estado variable crítico, una única instancia es suficiente para servir a toda la aplicación.
+
+PUNTO 3: PATRÓN SIMPLE FACTORY (HAMBURGUESA)
+- Problema: Instanciar objetos con diferentes métodos de entrega.
+- Solución: Se abstrajo la lógica de despacho. La clase 'Hamburguesa' recibe el parámetro de entrega (Mostrador, Retiro o Delivery) al momento de su creación, permitiendo que el objeto se comporte según el canal de venta.
+
+PUNTO 4: PATRÓN FACTORY METHOD (FACTURA)
+- Problema: Generar facturas basadas en la condición impositiva del cliente.
+- Solución: Se implementó una lógica de fabricación donde la clase 'Factura' se instancia con atributos específicos según el tipo de cliente (Responsable, Exento, etc.), facilitando la emisión de comprobantes diferenciados.
+
+PUNTO 5: PATRÓN BUILDER (AVIÓN)
+- Problema: Construcción de un objeto complejo con partes específicas (Body, turbinas, alas, tren de aterrizaje).
+- Solución: Se separó la construcción de la representación. 
+  * 'AircraftBuilder': Contiene los pasos de construcción.
+  * 'AerospaceDirector': Posee la "receta" y el orden para ensamblar las partes.
+  Este patrón permite construir diferentes modelos de aviones usando el mismo proceso de construcción.
+
+PUNTO 6: PATRÓN PROTOTYPE (CLONACIÓN)
+- Problema: Clonar un objeto y verificar que el clon también pueda clonarse.
+- Solución: Se utilizó el método 'clone()' basado en copy.deepcopy. La verificación en el archivo principal demuestra que una copia (clon 1) mantiene todas las propiedades de la clase original, incluyendo la capacidad de generar una nueva copia (clon 2) con total independencia de memoria.
+
+PUNTO 7: PATRÓN ABSTRACT FACTORY (SITUACIÓN TEÓRICA)
+-Situación imaginada:
+El desarrollo de un Framework de Interfaz de Usuario (UI) Multiplataforma que debe ejecutarse de forma nativa en diferentes Sistemas Operativos (Windows, macOS y Linux).
+
+-Justificación técnica:
+El patrón Abstract Factory es la solución ideal en este escenario porque permite gestionar familias de objetos relacionados (botones, ventanas, barras de desplazamiento, campos de texto) garantizando la consistencia visual y funcional dentro de cada plataforma.
+
+-Funcionamiento en el sistema:
+Interfaz de la Fábrica: Se define una "fábrica abstracta" con métodos como crearBoton(), crearVentana() y crearScrollbar().
+Fábricas Concretas: * Una WindowsFactory que instancia componentes con el estilo y comportamiento de Windows.
+Una MacFactory que instancia componentes con el diseño de Apple (bordes redondeados, transparencias).
+Independencia del Cliente: El código principal de la aplicación no conoce las clases específicas (como BotonWindows o BotonMac). Simplemente le pide a la "fábrica activa" que le provea los componentes.
