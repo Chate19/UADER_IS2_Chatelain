@@ -1,0 +1,11 @@
+Patrón Flyweight: Situación de utilidad
+El patrón Flyweight es útil cuando se necesita manejar una enorme cantidad de objetos similares que consumen mucha memoria, compartiendo los datos comunes (intrínsecos) entre ellos.
+
+Ejemplo: Un sistema de renderizado de bosque en un videojuego.
+
+Problema: Si tienes 100,000 árboles, cada objeto "Árbol" tiene datos pesados como la textura 3D, el modelo de hojas y el color del tronco. Crear 100,000 instancias agotaría la RAM.
+
+Solución Flyweight:
+Estado Intrínseco (Compartido): El modelo 3D y la textura de un "Pino". Solo se carga una vez en memoria.
+Estado Extrínseco (Único): Las coordenadas (X, Y, Z) y la escala de cada árbol individual.
+Resultado: Solo guardas miles de coordenadas (pequeñas) apuntando a un solo modelo pesado.

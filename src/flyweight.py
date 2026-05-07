@@ -42,7 +42,7 @@ class CarFamilies(object):
 if __name__ == '__main__':
 
     import os
-    os.system('clear')
+    os.system('cls')
 
 
     """ Genera diccionario con distintos tipos de auto y sus caracteristicas """

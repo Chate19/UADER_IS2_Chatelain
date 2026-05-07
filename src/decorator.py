@@ -43,7 +43,7 @@ class BoldWrapper(WrittenText):
 if __name__ == '__main__':
 
     import os
-    os.system('clear')
+    os.system('cls')
 
     before_gfg = WrittenText("UADER decorator pattern")
     after_gfg = ItalicWrapper(UnderlineWrapper(BoldWrapper(before_gfg)))

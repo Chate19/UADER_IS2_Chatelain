@@ -122,7 +122,7 @@ class CuboidBridge:
 
 # Instantiate a Cuboid
 import os
-os.system('clear')
+os.system('cls')
 
 print("Este es un ejemplo que no utiliza el pattern Bridge")
 

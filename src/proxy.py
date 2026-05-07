@@ -37,7 +37,7 @@ class CollegeProxy:
 if __name__ == "__main__":
 
     import os
-    os.system('clear')
+    os.system('cls')
 
 #*--- Instancia los objetos a operar back to back
     

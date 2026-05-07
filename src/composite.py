@@ -72,7 +72,7 @@ class CompositeElement:
 if __name__ == "__main__":
 
     import os
-    os.system('clear')
+    os.system('cls')
 
 
     topLevelMenu = CompositeElement("GeneralManager")
