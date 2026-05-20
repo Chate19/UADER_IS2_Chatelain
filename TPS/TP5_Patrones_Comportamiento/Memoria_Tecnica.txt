@@ -1,0 +1,117 @@
+MEMORIA TECNICA - TP5: PATRONES DE COMPORTAMIENTO
+Materia: Ingenieria de Software II
+Alumno: Chatelain Agustín
+==================================================
+
+
+PUNTO 1 - CADENA DE RESPONSABILIDAD
+-------------------------------------
+
+El patron Chain of Responsibility permite pasar una solicitud por una cadena
+de objetos hasta que alguno la procese. Cada objeto decide si la maneja o la
+pasa al siguiente.
+
+En este ejercicio se creo una clase base Handler con un metodo manejar() que
+delega al siguiente si no puede procesar el numero. Sobre esa base se
+implementaron dos handlers concretos: PrimeHandler, que consume el numero si
+es primo, y EvenHandler, que lo consume si es par.
+
+La cadena queda armada asi: PrimeHandler -> EvenHandler -> (no consumido).
+
+Los numeros del 1 al 100 se pasan uno a uno. Si PrimeHandler lo reconoce como
+primo lo toma y termina. Si no, EvenHandler verifica si es par. Si tampoco lo
+es, el Handler base imprime "NO CONSUMIDO". Ejemplos: el 2 es primo y lo toma
+PrimeHandler; el 4 no es primo pero es par y lo toma EvenHandler; el 9 no es
+primo ni par y queda sin consumir.
+
+El orden de la cadena es importante: si EvenHandler fuera primero, el 2 seria
+consumido como par en lugar de como primo.
+
+
+PUNTO 2 - ITERATOR
+-------------------------------------
+
+El patron Iterator permite recorrer los elementos de una coleccion sin exponer
+como esta armada internamente. La logica de recorrido queda separada de la
+estructura de datos.
+
+Se implemento la clase CadenaIterable que almacena un string y provee dos
+iteradores: StringIterator para recorrer de izquierda a derecha, y
+StringReverseIterator para recorrer de derecha a izquierda. Ambos implementan
+los metodos __iter__ y __next__ del protocolo nativo de Python, lo que permite
+usarlos directamente en bucles for.
+
+El iterador directo se obtiene con "for char in cadena" y el inverso con
+"for char in cadena.iter_reverso()". Cada iterador mantiene su propio indice,
+por lo que pueden coexistir multiples recorridos sobre la misma cadena sin
+interferirse.
+
+Se eligio hacer dos clases separadas en lugar de usar un parametro booleano
+para que cada una tenga una sola responsabilidad.
+
+
+PUNTO 3 - OBSERVER
+-------------------------------------
+
+El patron Observer define una relacion donde un objeto central (el sujeto)
+notifica automaticamente a todos sus dependientes (observers) cuando ocurre
+algo. El sujeto no necesita saber los detalles de cada observer.
+
+Se implemento la clase Emisor como sujeto. Mantiene una lista de observers y
+cuando llama a emitir(id) recorre esa lista e invoca actualizar(id) en cada
+uno. La clase base ObserverBase tiene un nombre y un ID fijo de 4 caracteres.
+Cuando recibe un ID lo compara con el propio y muestra si coincide o no.
+
+Se crearon 4 observers concretos: ObserverAlfa (AB12), ObserverBeta (CD34),
+ObserverGamma (EF56) y ObserverDelta (GH78). Para garantizar al menos 4
+coincidencias en 8 emisiones, la lista de IDs a emitir incluye los 4 IDs
+conocidos mas 4 aleatorios, y se mezcla antes de emitir.
+
+Los metodos suscribir() y desuscribir() permiten gestionar los observers en
+tiempo de ejecucion sin modificar el Emisor.
+
+
+PUNTO 4 - STATE CON MEMORIAS (SCANNER)
+-------------------------------------
+
+El patron State permite que un objeto cambie su comportamiento segun su estado
+interno. El programa original IS2_taller_scanner.py ya usaba este patron: la
+radio tiene un estado AM y un estado FM, y segun cual este activo el barrido
+recorre distintas frecuencias.
+
+La modificacion agrego la clase Memoria y cuatro instancias (M1 a M4). Cada
+memoria tiene una etiqueta, una banda (AM o FM) y una frecuencia especifica.
+Las memorias son independientes del estado actual de la radio, igual que en
+una radio real donde los presets pueden apuntar a cualquier banda.
+
+Las memorias configuradas son: M1 en 1250 AM, M2 en 89.1 FM, M3 en 1510 AM
+y M4 en 103.9 FM.
+
+Se agrego el metodo scan_memorias() a la clase Radio. Este metodo se llama al
+completar cada bloque de 3 scans y recorre las cuatro memorias en orden,
+imprimiendo la estacion de cada una. La logica original del scanner no fue
+modificada, solo se le agrego el comportamiento nuevo.
+
+
+PUNTO 5 - STATE CON MEMENTO (MEMORY + UNDO)
+-------------------------------------
+
+Este ejercicio combina dos patrones. State sigue gestionando las bandas AM/FM
+como en los puntos anteriores. Memento agrega la capacidad de guardar
+"fotos" del estado en distintos momentos y recuperarlas despues.
+
+Se creo la clase Snapshot que almacena la banda y la posicion de la estacion
+en un momento dado. La clase Radio mantiene una lista _historial con un maximo
+de 4 snapshots. Antes de ejecutar cada accion (scan o toggle) se guarda el
+estado actual. Si el historial supera los 4 elementos, se descarta el mas
+antiguo.
+
+El metodo undo() recibe un argumento que indica cuantos pasos atras recuperar:
+0 es el inmediato anterior, 1 es dos pasos atras, 2 es tres pasos atras y 3
+es cuatro pasos atras. Internamente esto se traduce en un indice negativo sobre
+la lista del historial (-1, -2, -3 o -4). Si no hay suficientes estados
+guardados se informa el error sin romper el programa.
+
+Luego de restaurar un snapshot, el historial se trunca eliminando los estados
+posteriores al restaurado, para evitar inconsistencias si se siguen haciendo
+acciones despues del undo.
