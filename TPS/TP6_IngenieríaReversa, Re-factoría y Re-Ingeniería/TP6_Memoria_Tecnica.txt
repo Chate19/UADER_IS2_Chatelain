@@ -1,0 +1,437 @@
+================================================================================
+  UNIVERSIDAD AUTÓNOMA DE ENTRE RÍOS
+  Facultad de Ciencia y Tecnología — IS2
+  TP6 — Ingeniería Reversa, Re-factoría y Re-Ingeniería
+  Memoria Técnica — getJason.pyc
+  Dr. Pedro E. Colla — Mayo 2025
+================================================================================
+
+================================================================================
+PUNTO 2a — OBTENCIÓN Y DOCUMENTACIÓN DEL SISTEMA LEGADO
+================================================================================
+
+Motivación (según metodología):
+  Sistema "legacy" cuya documentación difiere de su comportamiento real.
+  Pérdida de conocimiento organizacional (sin fuentes disponibles).
+
+--------------------------------------------------------------------------------
+PASO 1 — COLECCIÓN DE DATOS
+--------------------------------------------------------------------------------
+Se recolectaron todos los artefactos disponibles sin priorizar ni categorizar,
+validando su relevancia para el sistema fuente:
+
+  Artefacto            Tipo                  Descripción
+  ─────────────────────────────────────────────────────────────────────────────
+  getJason.pyc         Binario (bytecode)    Python 3.12, 170 bytes fuente,
+                                             compilado 06/05/2025 19:05:36 UTC
+  sitedata.json        Muestra de datos      Espacio de datos del sistema
+  IS2_TP6_RRR.pdf      Documentación de uso  Enunciado / especificación
+
+Contenido de sitedata.json:
+  {
+      "token1" : "C598-ECF9-F0F7-881A",
+      "token2" : "C598-ECF9-F0F7-881B"
+  }
+
+Contexto de negocios:
+  El programa recupera el API token para acceder a microservicios bancarios
+  del Banco XXX. El archivo sitedata.json puede contener múltiples claves.
+  Se desea reusar el programa para recuperar cualquier clave, indicada como
+  argumento, con default "token1".
+
+Faltantes detectados en esta etapa:
+  - No existe código fuente (.py).
+  - No existe documentación técnica formal del programa.
+  - No existen capturas de interfaz (programa CLI, no GUI).
+  - No existe historial de versiones ni repositorio.
+
+
+================================================================================
+PUNTO 2b — EJECUCIÓN Y PASOS 1 A 6 DE LA METODOLOGÍA
+================================================================================
+
+--------------------------------------------------------------------------------
+PASO 2 — EXTRAER INFORMACIÓN
+--------------------------------------------------------------------------------
+Se relevaron los datos colectados y se construyeron esquemas preliminares.
+
+Inventario de objetos disponibles:
+  - 1 binario ejecutable (.pyc)
+  - 1 archivo de datos (.json) con 2 claves
+  - 1 documento de requerimientos (.pdf)
+  - 0 archivos fuente (.py)
+
+Métricas del binario:
+  - Tamaño del módulo fuente original: 170 bytes
+  - Versión Python: 3.12.0 (magic number 3531)
+  - Dependencias: módulos estándar json, sys (sin dependencias externas)
+  - Número de instrucciones bytecode: 34 instrucciones RESUME→RETURN
+
+Documentación disponible: enunciado del TP únicamente.
+
+Resultados de ejecución (análisis dinámico):
+
+  Comando                                  Resultado
+  ─────────────────────────────────────────────────────────────────────────────
+  python3 getJason.pyc                     IndexError: list index out of range
+  python3 getJason.pyc sitedata.json       C598-ECF9-F0F7-881A
+  python3 getJason.pyc sitedata.json t2    C598-ECF9-F0F7-881A  ← ignora arg2
+
+Discrepancias identificadas:
+  1. Sin argumentos: falla con excepción no controlada (sin mensaje útil).
+  2. Con segundo argumento: lo ignora silenciosamente (clave hardcodeada).
+  3. El comportamiento real NO satisface el requerimiento de clave parametrable.
+
+--------------------------------------------------------------------------------
+PASO 3 — EXTRAER ESTRUCTURA
+--------------------------------------------------------------------------------
+Se utilizó el módulo 'dis' de Python para desensamblar el bytecode instrucción
+por instrucción, ya que los decompiladores automáticos (uncompyle6 3.9.3,
+decompyle3 3.9.3) no soportan Python 3.12.
+
+Variables identificadas en el bytecode:
+  Nombre      Tipo      Origen              Descripción
+  ────────────────────────────────────────────────────────────────────────────
+  jsonfile    str       sys.argv[1]         Ruta al archivo JSON
+  jsonkey     str       constante 'token1'  Clave de búsqueda (hardcodeada)
+  myfile      file obj  open(jsonfile,'r')  Handle de archivo
+  data        str       myfile.read()       Contenido crudo del JSON
+  obj         dict      json.loads(data)    Diccionario Python parseado
+
+Estructuras de datos:
+  - Entrada: archivo JSON (dict plano clave→valor string)
+  - Salida: stdout con el string del valor
+
+Nodos de procesamiento (instrucciones clave del bytecode):
+  IMPORT_NAME  json, sys           → carga de módulos
+  LOAD_ATTR    argv                → acceso a argumentos CLI
+  BINARY_SUBSCR [1]               → toma argv[1] (sin validación)
+  LOAD_CONST   'token1'           → clave HARDCODEADA
+  CALL         open(...,'r')      → apertura de archivo
+  CALL         myfile.read()      → lectura completa
+  CALL         json.loads(data)   → parseo JSON
+  BINARY_SUBSCR obj['token1']     → acceso al valor
+  CALL         print(str(...))    → salida a stdout
+
+Fuente de la discrepancia: la instrucción BINARY_SUBSCR usa la constante
+'token1' directa del pool de constantes (co_consts[3]). El segundo argumento
+de línea de comandos (argv[2]) nunca es referenciado en el bytecode.
+
+--------------------------------------------------------------------------------
+PASO 4 — REGISTRAR FUNCIONALIDAD
+--------------------------------------------------------------------------------
+Diagrama de flujo del binario original getJason.pyc:
+
+  [INICIO]
+      |
+      v
+  ¿argv[1] existe?
+      | NO → IndexError (no controlado) → [FIN con error]
+      | SI
+      v
+  jsonfile = argv[1]
+  jsonkey  = 'token1'  ← valor fijo, no parametrizable
+      |
+      v
+  Abrir archivo jsonfile en modo lectura
+      | ERROR → WithException propagada (no controlada)
+      v
+  data = leer todo el archivo
+      |
+      v
+  obj = json.loads(data)
+      | ERROR → JSONDecodeError propagada (no controlada)
+      v
+  valor = obj['token1']  ← clave siempre fija
+      | KeyError si no existe (no controlado)
+      v
+  print(str(valor))
+      |
+      v
+  [FIN OK]
+
+Condiciones de excepción (todas no manejadas en el original):
+  - IndexError  : falta de argv[1]
+  - FileNotFoundError: archivo no existe
+  - json.JSONDecodeError: JSON malformado
+  - KeyError    : clave no existe en el JSON
+
+Validaciones realizadas: NINGUNA en el binario original.
+
+--------------------------------------------------------------------------------
+PASO 5 — REGISTRAR FLUJO DE DATOS
+--------------------------------------------------------------------------------
+Diagrama de secuencia (texto):
+
+  Usuario/CLI       getJason.pyc      sys           open()     json
+      |                  |             |               |         |
+      |--argv[1]-------->|             |               |         |
+      |                  |--argv[1]--->|               |         |
+      |                  |<--jsonfile--|               |         |
+      |                  |--open(jsonfile,'r')-------->|         |
+      |                  |<--myfile--------------------|         |
+      |                  |--myfile.read()------------->|         |
+      |                  |<--data----------------------|         |
+      |                  |--json.loads(data)------------------------->|
+      |                  |<--obj (dict)---------------------------|   |
+      |                  |--obj['token1'] (acceso interno)        |
+      |<--stdout: valor--|
+
+Estados del sistema:
+  INICIO → LECTURA_ARGS → APERTURA_ARCHIVO → LECTURA_DATOS →
+  PARSEO_JSON → ACCESO_CLAVE → SALIDA → FIN
+
+Dependencias:
+  - Módulo json  (stdlib, siempre disponible)
+  - Módulo sys   (stdlib, siempre disponible)
+  - Archivo sitedata.json debe existir en el directorio de ejecución
+  - La clave 'token1' debe estar presente en el JSON
+
+--------------------------------------------------------------------------------
+PASO 6 — DOCUMENTACIÓN
+--------------------------------------------------------------------------------
+Este informe constituye la documentación recuperada. Los artefactos resultantes
+deben colocarse bajo control de configuración (GIT) como línea de base:
+
+  Artefacto recuperado/generado    Descripción
+  ─────────────────────────────────────────────────────────────────────────────
+  getJason_decompiled.py           Código reconstruido, fiel al binario
+  getJason.py                      Versión refactorizada y documentada
+  sitedata.json                    Archivo de datos (sin cambios)
+  TP6_Memoria_Tecnica.txt          Este informe
+
+  Comando GIT sugerido:
+    git init getJason-project
+    cd getJason-project
+    git add getJason_decompiled.py getJason.py sitedata.json TP6_Memoria_Tecnica.txt
+    git commit -m "baseline: ingeniería reversa getJason.pyc - TP6 IS2"
+    git tag v1.0-baseline
+
+
+================================================================================
+PUNTO 2c — DECOMPILACIÓN DE getJason.pyc
+================================================================================
+
+Herramientas intentadas:
+  - uncompyle6 3.9.3  → "Unsupported Python version, 3.12.0"
+  - decompyle3 3.9.3  → "Unsupported Python version, 3.12.0"
+
+Solución aplicada: reconstrucción manual mediante 'import dis, marshal'.
+El código obtenido es funcionalmente equivalente al binario (verificado en 2d).
+
+──────────────────────────────────────────────────────────────────
+getJason_decompiled.py  (fiel al bytecode, SIN modificaciones)
+──────────────────────────────────────────────────────────────────
+# Reconstruido manualmente via dis — Python bytecode 3.12.0 (3531)
+# Embedded file name: getJason.py
+# Compiled at: 2025-05-06 19:05:36
+# Size of source mod 2**32: 170 bytes
+
+import json
+import sys
+
+jsonfile = sys.argv[1]          # toma el nombre de archivo desde argv[1]
+jsonkey = 'token1'              # clave hardcodeada, nunca usada como parámetro
+
+with open(jsonfile, 'r') as myfile:
+    data = myfile.read()
+
+obj = json.loads(data)
+print(str(obj[jsonkey]))
+──────────────────────────────────────────────────────────────────
+
+
+================================================================================
+PUNTO 2d — VERIFICACIÓN DEL CÓDIGO DECOMPILADO
+================================================================================
+
+Comparación de comportamiento getJason.pyc vs getJason_decompiled.py:
+
+  Caso                             .pyc              .py decompilado   Match
+  ─────────────────────────────────────────────────────────────────────────────
+  Sin argumentos                   IndexError        IndexError         SI
+  sitedata.json (token1 default)   C598-ECF9-F0F7-881A  C598-ECF9-F0F7-881A  SI
+  sitedata.json token2 (ignorado)  C598-ECF9-F0F7-881A  C598-ECF9-F0F7-881A  SI
+
+Conclusión: comportamiento 100% idéntico. La reconstrucción es correcta.
+
+
+================================================================================
+PUNTO 2e — DIFERENCIAS ENTRE CÓDIGO OBTENIDO Y DOCUMENTACIÓN/REQUERIMIENTOS
+================================================================================
+
+  Aspecto              Requerimiento enunciado       Comportamiento real
+  ─────────────────────────────────────────────────────────────────────────────
+  Clave parametrable   argv[2] con default 'token1'  'token1' hardcodeada en
+                                                     co_consts; argv[2] ignorado
+  Manejo de errores    No especificado formalmente,  Ninguno. Cualquier error
+                       pero implícito en robustez    genera excepción no capturada
+  Múltiples claves     El JSON tiene token1,token2   Solo token1 funciona
+                       y se quiere acceder a ambas
+  Arquitectura         Reutilizable/parametrizable   Script lineal, sin funciones,
+                                                     sin separación de concerns
+
+Causa raíz:
+  El programa fue escrito para un único caso de uso específico (Banco XXX,
+  clave fija token1). La "documentación" en el enunciado describe el
+  REQUERIMIENTO DE REUSO DESEADO, no el comportamiento actual del binario.
+  El binario nunca fue diseñado para ser genérico.
+
+
+================================================================================
+PUNTO 2f — MODIFICACIÓN PARA SATISFACER LOS REQUERIMIENTOS
+PUNTO 2g — REMOCIÓN DE COMENTARIOS DEL DECOMPILADOR, DOCUMENTACIÓN CORRECTA
+================================================================================
+
+Intervenciones realizadas (Re-factoría según metodología RRR):
+  1. Encapsular lógica en función get_value() → reutilizabilidad
+  2. Agregar argumento opcional argv[2] con default 'token1' → parametrización
+  3. Agregar validación de len(sys.argv) → elimina el IndexError original
+  4. Agregar manejo de FileNotFoundError, JSONDecodeError, KeyError
+  5. Agregar códigos de salida diferenciados (1,2,3,4) → integrabilidad
+  6. Remover comentarios generados por el proceso de decompilación
+  7. Documentar con docstring estándar Python (módulo + función)
+
+Nota de re-factoría: el comportamiento externo como caja negra para el caso
+original (sitedata.json sin 2do argumento) es idéntico al binario.
+La nueva funcionalidad (argv[2]) es una extensión, no un cambio de comportamiento.
+
+──────────────────────────────────────────────────────────────────
+getJason.py  (versión final refactorizada y documentada)
+──────────────────────────────────────────────────────────────────
+"""
+getJason.py - Recuperador de valores desde archivos JSON.
+
+Uso:
+    python3 getJason.py <archivo_json> [clave]
+
+Argumentos:
+    archivo_json : Ruta al archivo JSON que contiene los datos.
+    clave        : Clave a recuperar del JSON (default: 'token1').
+
+Descripción:
+    Permite recuperar cualquier clave existente en un archivo JSON.
+    Originalmente diseñado para obtener tokens de acceso a microservicios
+    bancarios del Banco XXX desde el archivo sitedata.json.
+
+Ejemplos:
+    python3 getJason.py sitedata.json
+    python3 getJason.py sitedata.json token1
+    python3 getJason.py sitedata.json token2
+
+Retorna:
+    El valor asociado a la clave en stdout.
+    Mensaje de error en stderr si el archivo no existe, el JSON es inválido
+    o la clave no se encuentra.
+"""
+
+import json
+import sys
+
+
+def get_value(jsonfile: str, jsonkey: str = 'token1') -> str:
+    """
+    Lee un archivo JSON y retorna el valor asociado a la clave indicada.
+
+    Args:
+        jsonfile: Ruta al archivo JSON.
+        jsonkey:  Clave a buscar en el JSON (default: 'token1').
+
+    Returns:
+        El valor como string.
+
+    Raises:
+        FileNotFoundError: Si el archivo no existe.
+        json.JSONDecodeError: Si el archivo no es JSON válido.
+        KeyError: Si la clave no existe en el JSON.
+    """
+    with open(jsonfile, 'r') as myfile:
+        data = myfile.read()
+    obj = json.loads(data)
+    return str(obj[jsonkey])
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Uso: python3 getJason.py <archivo_json> [clave]", file=sys.stderr)
+        sys.exit(1)
+
+    jsonfile = sys.argv[1]
+    jsonkey = sys.argv[2] if len(sys.argv) >= 3 else 'token1'
+
+    try:
+        print(get_value(jsonfile, jsonkey))
+    except FileNotFoundError:
+        print(f"Error: archivo '{jsonfile}' no encontrado.", file=sys.stderr)
+        sys.exit(2)
+    except json.JSONDecodeError as e:
+        print(f"Error: JSON inválido en '{jsonfile}': {e}", file=sys.stderr)
+        sys.exit(3)
+    except KeyError:
+        print(f"Error: clave '{jsonkey}' no existe en '{jsonfile}'.", file=sys.stderr)
+        sys.exit(4)
+
+
+if __name__ == '__main__':
+    main()
+──────────────────────────────────────────────────────────────────
+
+
+================================================================================
+PUNTO 2h — VERIFICACIÓN Y VALIDACIÓN — CASOS DE PRUEBA
+================================================================================
+
+Ambiente de prueba:
+  Python 3.12.3 | Ubuntu 24 | sitedata.json con token1 y token2
+
+  ID     Comando                                    Salida esperada              Exit  Resultado
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  TC-01  python3 getJason.py                        Mensaje de uso (stderr)       1    PASS
+  TC-02  python3 getJason.py sitedata.json          C598-ECF9-F0F7-881A           0    PASS
+  TC-03  python3 getJason.py sitedata.json token1   C598-ECF9-F0F7-881A           0    PASS
+  TC-04  python3 getJason.py sitedata.json token2   C598-ECF9-F0F7-881B           0    PASS
+  TC-05  python3 getJason.py noexiste.json          Error: archivo no encontrado  2    PASS
+  TC-06  python3 getJason.py sitedata.json token99  Error: clave no existe        4    PASS
+  TC-07  python3 getJason.py /tmp/bad.json token1   Error: JSON inválido          3    PASS
+  TC-08a python3 getJason.py /tmp/multi.json a      val_a                         0    PASS
+  TC-08b python3 getJason.py /tmp/multi.json b      val_b                         0    PASS
+  TC-08c python3 getJason.py /tmp/multi.json c      val_c                         0    PASS
+
+  Resultado global: 10/10 PASS
+
+Cobertura de casos:
+  - Ruta nominal (archivo correcto, clave por defecto)          → TC-02
+  - Ruta nominal (clave explícita token1)                       → TC-03
+  - Nueva funcionalidad (clave token2)                          → TC-04
+  - Nueva funcionalidad (JSON con N claves arbitrarias)         → TC-08a/b/c
+  - Error de uso (sin argumentos)                               → TC-01
+  - Error de archivo no encontrado (FileNotFoundError, exit 2)  → TC-05
+  - Error de clave inexistente (KeyError, exit 4)               → TC-06
+  - Error de JSON malformado (JSONDecodeError, exit 3)          → TC-07
+
+
+================================================================================
+RESUMEN EJECUTIVO
+================================================================================
+
+  Punto  Tarea                                                Estado
+  ─────────────────────────────────────────────────────────────────────────────
+  2a     Obtención y documentación del sistema legado         COMPLETO
+  2b     Ejecución + pasos 1-6 metodología ingeniería reversa COMPLETO
+  2c     Decompilación / reconstrucción de getJason.py        COMPLETO (manual)
+  2d     Verificación equivalencia binario vs decompilado     COMPLETO
+  2e     Análisis diferencias código vs requerimientos        COMPLETO
+  2f     Refactorización para satisfacer requerimientos       COMPLETO
+  2g     Documentación correcta, comentarios decompilador     COMPLETO
+         removidos
+  2h     Casos de prueba (10 casos, 10 PASS)                 COMPLETO
+
+Artefactos entregados:
+  getJason_decompiled.py   Reconstrucción fiel al binario original
+  getJason.py              Versión refactorizada y documentada (entregable final)
+  sitedata.json            Archivo de datos (sin modificaciones)
+  TP6_Memoria_Tecnica.txt  Este informe
+
+================================================================================
+  Fin del documento
+================================================================================
