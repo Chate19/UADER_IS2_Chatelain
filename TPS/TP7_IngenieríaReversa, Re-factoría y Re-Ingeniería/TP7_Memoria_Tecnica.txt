@@ -1,0 +1,308 @@
+================================================================================
+  UNIVERSIDAD AUTÓNOMA DE ENTRE RÍOS
+  Facultad de Ciencia y Tecnología — IS2
+  TP7 — Ingeniería Reversa, Re-factoría y Re-Ingeniería
+  Memoria Técnica — getJason.py versión 1.1
+  Dr. Pedro E. Colla — Mayo 2025
+================================================================================
+
+Artefacto de entrada : getJason.py (TP6, versión 1.0 — procedural)
+Artefacto de salida  : getJason.py (TP7, versión 1.1 — Singleton + OOP)
+Pylint final         : 10.00/10
+
+
+================================================================================
+PUNTO a — ANÁLISIS DE LA TRANSFORMACIÓN OOP
+================================================================================
+
+El programa getJason.py de TP6 consistía en un script procedural puro:
+una función libre get_value() y un main() sin ninguna estructura OOP.
+
+Diagnóstico del código TP6:
+  - Sin clases: toda la lógica en funciones globales.
+  - Sin encapsulamiento: datos y comportamiento no agrupados.
+  - Sin posibilidad de estado compartido entre invocaciones.
+  - Sin contrato formal: ninguna interfaz define lo que el módulo expone.
+  - Sin patrón de instanciación: cada llamada independiente, sin control.
+
+Intervención OOP identificada:
+  1. Definir una interfaz abstracta (IJsonReader) que establezca el contrato.
+  2. Implementar la lógica TP6 como clase concreta (JsonReaderProcedural).
+  3. Crear la nueva implementación como clase Singleton (JsonReaderSingleton).
+  4. El cliente (main) opera exclusivamente contra la interfaz, nunca contra
+     las implementaciones concretas.
+
+Esta estructura habilita:
+  - Intercambio de implementación sin tocar el código cliente (main).
+  - Extensibilidad: nuevas implementaciones sin romper las existentes.
+  - Testeabilidad: cada clase puede probarse de forma aislada.
+  - Estado compartido controlado (via Singleton) para futuras mejoras.
+
+
+================================================================================
+PUNTO b — PATRÓN DE DISEÑO SINGLETON
+================================================================================
+
+El patrón Singleton (Gang of Four — Creational Patterns) garantiza que una
+clase tenga una única instancia y provee un punto de acceso global a ella.
+
+Motivación en este contexto:
+  El programa accede a tokens críticos de API bancaria. En un entorno de
+  alta frecuencia de invocación (microservicios), es conveniente que el
+  objeto lector exista una sola vez: evita múltiples instanciaciones costosas
+  y permite agregar caché, logging o métricas compartidas en el futuro.
+
+Implementación en Python (sobreescritura de __new__):
+
+  class JsonReaderSingleton(IJsonReader):
+      _instance = None          # Atributo de clase: única referencia
+
+      def __new__(cls):
+          if cls._instance is None:
+              cls._instance = super().__new__(cls)  # Solo se crea UNA vez
+          return cls._instance                       # Siempre retorna la misma
+
+Verificación del invariante Singleton:
+  >>> from getJason import JsonReaderSingleton
+  >>> a = JsonReaderSingleton()
+  >>> b = JsonReaderSingleton()
+  >>> a is b
+  True                          ← misma instancia, confirmado
+
+Comparación de comportamiento Singleton vs Procedural:
+
+  Aspecto                  JsonReaderProcedural    JsonReaderSingleton
+  ─────────────────────────────────────────────────────────────────────
+  Número de instancias     Ilimitado               Exactamente 1
+  Estado compartido        No                      Si (via _instance)
+  Costo de instanciación   Cada llamada            Solo la primera
+  Extensibilidad futura    Limitada                Alta (estado + cache)
+  Complejidad              Baja                    Media
+
+Métodos públicos expuestos (ambas implementaciones):
+  get_value(jsonfile, jsonkey)  → retorna el valor de una clave
+  get_all_keys(jsonfile)        → retorna lista de todas las claves
+
+
+================================================================================
+PUNTO c — EJECUCIÓN DESDE CLI Y ROBUSTEZ
+================================================================================
+
+El objetivo es que el programa NUNCA termine con una excepción del sistema.
+Todo error se transforma en mensaje descriptivo + código de salida controlado.
+
+Tabla de códigos de salida:
+
+  Código  Significado
+  ──────────────────────────────────────────────────────────────
+  0       Éxito
+  1       Error de uso / argumentos incorrectos o insuficientes
+  2       Archivo JSON no encontrado (FileNotFoundError)
+  3       Archivo JSON malformado (json.JSONDecodeError)
+  4       Clave no existe en el JSON (KeyError)
+
+Coberturas de error implementadas:
+  - Sin argumentos           → mensaje de uso, exit 1
+  - Flag desconocido (ej -x) → mensaje de uso, exit 1
+  - Archivo inexistente      → mensaje descriptivo, exit 2
+  - JSON malformado          → mensaje descriptivo + detalle, exit 3
+  - Clave inexistente        → mensaje descriptivo, exit 4
+  - Todas mediante try/except: ninguna excepción llega al usuario cruda.
+
+
+================================================================================
+PUNTO d — BRANCHING BY ABSTRACTION
+================================================================================
+
+Branching by Abstraction es una técnica de refactorización (Martin Fowler)
+para introducir una nueva implementación sin interrumpir el código existente.
+
+Pasos aplicados en este TP:
+
+  Paso 1 — Crear la abstracción:
+    Se define IJsonReader(ABC) con los métodos get_value() y get_all_keys()
+    como métodos abstractos. Establece el contrato común.
+
+  Paso 2 — Adaptar la implementación existente:
+    JsonReaderProcedural implementa IJsonReader conservando exactamente
+    el comportamiento de la versión TP6. La rama "antigua" queda estable.
+
+  Paso 3 — Crear la nueva implementación:
+    JsonReaderSingleton también implementa IJsonReader. Es la "rama nueva"
+    con el patrón de diseño Singleton.
+
+  Paso 4 — El cliente depende solo de la abstracción:
+    main() declara la variable 'reader' de tipo IJsonReader. Solo cambia
+    una línea para activar una u otra implementación:
+
+      # Rama antigua (TP6):
+      reader = JsonReaderProcedural()
+
+      # Rama nueva   (TP7) — ACTIVA:
+      reader = JsonReaderSingleton()
+
+  Paso 5 — Convergencia:
+    Una vez verificada la equivalencia funcional (ver punto h, casos TC-03
+    a TC-09), la rama antigua puede eliminarse en una futura versión 1.2.
+
+Diagrama de la arquitectura:
+
+  ┌──────────────────────────────────────────┐
+  │           <<abstract>>                   │
+  │           IJsonReader                    │
+  │  + get_value(file, key) : str  [abs]     │
+  │  + get_all_keys(file)   : list [abs]     │
+  └──────────────┬───────────────────────────┘
+                 │ implementa
+        ┌────────┴──────────┐
+        │                   │
+  ┌─────┴──────────┐  ┌─────┴───────────────┐
+  │ JsonReader     │  │ JsonReaderSingleton  │
+  │ Procedural     │  │                      │
+  │ (rama antigua) │  │ - _instance: cls     │
+  │ TP6 / v1.0     │  │ + __new__()          │
+  └────────────────┘  │ TP7 / v1.1  ACTIVO   │
+                      └──────────────────────┘
+                               ▲
+                               │ instancia
+                        ┌──────┴──────┐
+                        │   main()    │
+                        │  (cliente)  │
+                        └─────────────┘
+
+
+================================================================================
+PUNTO e — COMENTARIOS Y CARÁTULA DE COPYRIGHT
+================================================================================
+
+Se agregó la siguiente carátula al inicio del archivo:
+
+  ################################################################################
+  # copyright UADER-FCyT-IS2©2024 todos los derechos reservados
+  ################################################################################
+  # Módulo  : getJason.py
+  # Versión : 1.1
+  # Autor   : UADER-FCyT-IS2
+  ################################################################################
+
+Comentarios incorporados:
+  - Docstring de módulo con descripción, uso, argumentos y códigos de salida.
+  - Docstring en cada clase: propósito, patrón, atributos, relación con la
+    estrategia Branching by Abstraction.
+  - Docstring en cada método: Args, Returns, Raises.
+  - Comentarios inline en los puntos de decisión (selección de implementación,
+    lógica del Singleton en __new__).
+  - Separadores de sección para facilitar la lectura del código.
+
+
+================================================================================
+PUNTO f — CONTROL DE ARGUMENTOS DE EJECUCIÓN
+================================================================================
+
+La función validate_args(args) centraliza toda la validación de argumentos
+ANTES de invocar cualquier lógica de negocio. Reglas implementadas:
+
+  Regla 1: Lista vacía → (None, None) → uso, exit 1
+  Regla 2: args[0] == '-v' → ('-v', None) → mostrar versión, exit 0
+  Regla 3: args[0] empieza con '-' pero no es '-v' → (None, None) → uso, exit 1
+  Regla 4: args[0] es nombre de archivo válido → (jsonfile, jsonkey)
+           donde jsonkey = args[1] si existe, sino DEFAULT_KEY ('token1')
+
+Todo error producido por un argumento incorrecto termina con exit 1 y
+mensaje de uso en stderr. Ningún caso termina con excepción sin capturar.
+
+
+================================================================================
+PUNTO g — ARGUMENTO -v (VERSIÓN)
+================================================================================
+
+Si el programa se ejecuta con el argumento '-v', imprime la versión y termina
+limpiamente con exit 0:
+
+  $ python3 getJason.py -v
+  getJason versión 1.1
+
+Implementación en validate_args():
+  if first_arg == '-v':
+      return '-v', None
+
+Implementación en main():
+  if jsonfile == '-v':
+      print(f"getJason versión {VERSION}")
+      sys.exit(EXIT_OK)
+
+La constante VERSION = "1.1" está definida a nivel módulo, facilitando
+su actualización en futuras versiones.
+
+
+================================================================================
+PUNTO h — PYLINT: ANÁLISIS ESTÁTICO Y CORRECCIONES
+================================================================================
+
+Primera ejecución — pylint 4.0.5:
+
+  Observación                    Código   Línea   Acción tomada
+  ──────────────────────────────────────────────────────────────────────────────
+  Module name doesn't conform    C0103    1       Se agrega 'pylint: disable=
+  to snake_case naming style               invalid-name' al módulo. El nombre
+  (getJason vs get_jason)                 'getJason' es un requisito del
+                                          enunciado TP6/TP7, no puede cambiarse.
+  Too few public methods (1/2)   R0903    46,81   Se agrega método get_all_keys()
+  en IJsonReader y Procedural             a la interfaz e implementaciones.
+                                          Provee funcionalidad real (descubrir
+                                          claves disponibles en el JSON).
+
+  Puntaje 1ª corrida: 9.53/10
+
+Segunda ejecución (luego de correcciones):
+
+  (no warnings)
+  Your code has been rated at 10.00/10
+
+Resultado final: 10.00/10 ✓ (requisito: ≥ 8)
+
+
+================================================================================
+CASOS DE PRUEBA
+================================================================================
+
+Ambiente: Python 3.12.3 | Ubuntu 24 | sitedata.json con token1, token2
+
+  ID     Comando                                        Salida              Exit  OK
+  ────────────────────────────────────────────────────────────────────────────────────
+  TC-01  python3 getJason.py                            Mensaje de uso       1    ✓
+  TC-02  python3 getJason.py -v                         getJason versión 1.1 0    ✓
+  TC-03  python3 getJason.py sitedata.json              C598-ECF9-F0F7-881A  0    ✓
+  TC-04  python3 getJason.py sitedata.json token1       C598-ECF9-F0F7-881A  0    ✓
+  TC-05  python3 getJason.py sitedata.json token2       C598-ECF9-F0F7-881B  0    ✓
+  TC-06  python3 getJason.py no_existe.json             Error [2]: archivo…  2    ✓
+  TC-07  python3 getJason.py sitedata.json clavefalsa   Error [4]: clave…    4    ✓
+  TC-08  python3 getJason.py /tmp/bad.json token1       Error [3]: JSON…     3    ✓
+  TC-09  python3 getJason.py --xflag                    Mensaje de uso       1    ✓
+  TC-10  Verificar invariante Singleton (a is b)        True                 -    ✓
+
+  Resultado: 10/10 PASS
+
+
+================================================================================
+RESUMEN EJECUTIVO
+================================================================================
+
+  Punto  Tarea                                                     Estado
+  ─────────────────────────────────────────────────────────────────────────────
+  a      Análisis de transformación OOP                            COMPLETO
+  b      Patrón Singleton implementado y verificado                COMPLETO
+  c      Ejecución CLI robusta, sin excepciones sin capturar       COMPLETO
+  d      Branching by Abstraction (IJsonReader + 2 ramas)          COMPLETO
+  e      Carátula copyright + comentarios completos                COMPLETO
+  f      Validación de argumentos centralizada en validate_args()  COMPLETO
+  g      Argumento -v emite "getJason versión 1.1", exit 0         COMPLETO
+  h      pylint 10.00/10 (requisito: ≥ 8)                          COMPLETO
+
+Artefactos entregados:
+  getJason_v1.1.py      Versión TP7 refactorizada (Singleton + OOP)
+  TP7_Memoria_Tecnica.txt  Este informe
+
+================================================================================
+  Fin del documento
+================================================================================
