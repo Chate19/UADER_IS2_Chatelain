@@ -1,0 +1,299 @@
+================================================================================
+  UNIVERSIDAD AUTÓNOMA DE ENTRE RÍOS
+  Facultad de Ciencia y Tecnología — IS2
+  TP8 — Ingeniería Reversa, Re-factoría y Re-Ingeniería
+  Memoria Técnica — getJason.py versión 1.2 (sistema de ruteo de pagos)
+  Dr. Pedro E. Colla — Mayo 2025
+================================================================================
+
+Artefacto de entrada : getJason.py (v1.1 — TP7, Singleton + Branching by Abstraction)
+Artefacto de salida  : getJason.py (v1.2 — TP8, Cadena de Responsabilidad + Iterator)
+pylint final          : 10.00/10
+mypy --strict (bonus) : Success (0 errores)
+
+Naturaleza de la intervención:
+  Este TP corresponde a Re-Ingeniería (no Re-factoría): se incorpora un
+  nuevo modelo de negocio (automatización de la decisión de pago bancario)
+  examinando "base cero" cómo el componente Singleton de TP6/TP7 puede
+  reutilizarse como cimiento de un subsistema mayor, en lugar de limitarse
+  a preservar el comportamiento externo como caja negra (eso es Re-factoría).
+  Por eso el alcance funcional del programa crece deliberadamente.
+
+
+================================================================================
+NOTA DE DISEÑO — "CADENA DE COMANDO" vs "CHAIN OF RESPONSIBILITY"
+================================================================================
+El enunciado del TP8 (punto d) pide una clase con el patrón "cadena de
+comando". El patrón GoF (Gang of Four) que implementa exactamente la
+lógica descrita -una solicitud que recorre una cadena de manejadores
+hasta que uno de ellos la satisface, delegando automáticamente si no
+puede- se denomina formalmente "Chain of Responsibility" (Cadena de
+Responsabilidad). Es el mismo concepto al que alude la metáfora de
+"cadena de comando" (una jerarquía donde cada nivel atiende o eleva la
+solicitud al siguiente). Se adoptó el nombre técnico estándar para la
+implementación, preservando exactamente el comportamiento solicitado.
+
+
+================================================================================
+PUNTOS a Y b — ANÁLISIS: DEL EMPLEADO MANUAL A LA DECISIÓN AUTOMATIZADA
+================================================================================
+
+Situación anterior (a):
+  Un empleado decidía manualmente desde qué banco liberar un pago y
+  elegía el token correspondiente (interacción humana, getJason.py
+  usado como herramienta de consulta puntual vía CLI).
+
+Automatización identificada (b):
+  La decisión se reduce a dos reglas mecánicas:
+    1. La cuenta elegida debe tener saldo suficiente para el monto.
+    2. Los pagos deben distribuirse de forma balanceada entre cuentas
+       (no concentrar todo en una sola mientras la otra tiene saldo).
+
+  Estas dos reglas se traducen directamente en la arquitectura:
+    Regla 1 → Cadena de Responsabilidad (cada manejador verifica saldo
+              antes de aceptar la solicitud; si no alcanza, delega).
+    Regla 2 → PaymentRouter alterna qué cuenta encabeza la cadena en
+              cada solicitud sucesiva (round-robin sobre el punto de
+              entrada), repartiendo el uso entre token1 y token2.
+
+
+================================================================================
+PUNTO c — INTEGRACIÓN DEL SINGLETON EN EL NUEVO COMPONENTE
+================================================================================
+
+El objeto JsonReaderSingleton de TP7 (dado un nombre de token/banco,
+retorna "la clave") se inyecta en cada ConcreteAccountHandler de la
+cadena. La recuperación de la credencial ocurre en el momento exacto
+en que un manejador decide que SU cuenta cubrirá el pago — no antes,
+no para cuentas que terminan siendo delegadas a otra:
+
+  class ConcreteAccountHandler(AccountHandler):
+      def __init__(self, account, reader: IJsonReader, jsonfile):
+          self._account = account
+          self._reader = reader        # ← el Singleton inyectado
+          self._jsonfile = jsonfile
+
+      def handle(self, request):
+          if self._account.has_sufficient_funds(request.amount):
+              credential = self._reader.get_value(
+                  self._jsonfile, self._account.token)   # ← uso puntual
+              ...
+
+"Nuevo componente" referido en el enunciado = clase PaymentRouter:
+  recibe el archivo JSON, construye la cadena de cuentas, decide
+  automáticamente cuál atenderá cada solicitud de pago, y expone el
+  resultado (PaymentRecord) y el historial (PaymentLedger).
+
+Continuidad de Branching by Abstraction (heredada de TP7):
+  ConcreteAccountHandler recibe un IJsonReader por inyección de
+  dependencias, no una clase concreta. Esto significa que la
+  abstracción introducida en TP7 sigue vigente también en el nuevo
+  componente: PaymentRouter puede recibir JsonReaderSingleton (rama
+  activa) o JsonReaderProcedural (rama antigua) sin cambiar una sola
+  línea de ConcreteAccountHandler ni del resto de la cadena.
+
+  Verificación (TC-05 más abajo):
+    PaymentRouter('sitedata.json')                          → Singleton
+    PaymentRouter('sitedata.json', reader=JsonReaderProcedural()) → Procedural
+    Resultado: ambos producen exactamente el mismo PaymentRecord. ✓
+
+
+================================================================================
+PUNTO d — CADENA DE RESPONSABILIDAD: CUENTAS token1 Y token2
+================================================================================
+
+Saldos iniciales (constante INITIAL_BALANCES):
+  token1 : $1000.00
+  token2 : $2000.00
+
+Jerarquía de clases:
+
+  ┌──────────────────────────────────────────────────┐
+  │              <<abstract>>                         │
+  │              AccountHandler                       │
+  │  + set_next(handler) -> AccountHandler             │
+  │  + delegate(request) -> PaymentRecord | None       │
+  │  + handle(request)   -> PaymentRecord | None [abs] │
+  └──────────────────┬─────────────────────────────────┘
+                     │ implementa
+            ┌────────┴─────────────┐
+            │  ConcreteAccountHandler        │
+            │  - _account: Account            │
+            │  - _reader: IJsonReader          │
+            │  + handle(request)               │
+            │  - _mask(credential) [static]    │
+            └──────────────────────────────────┘
+
+Mecánica de la cadena (método PaymentRouter._build_chain):
+  - Si _turn == 0: orden = [token1, token2]
+  - Si _turn == 1: orden = [token2, token1]
+  - Se encadenan con set_next() y se retorna la cabeza.
+  - _turn se invierte después de cada process_payment().
+
+Account (objeto controlado por cada manejador):
+  + has_sufficient_funds(amount) -> bool
+  + debit(amount) -> None   (lanza ValueError si amount > balance)
+
+
+================================================================================
+PUNTO e — PROCESAMIENTO DE PAGOS Y LISTADO CRONOLÓGICO (PATRÓN ITERATOR)
+================================================================================
+
+Se generaron 7 solicitudes de $500.- cada una (números de pedido 1 a 7),
+deliberadamente una más de las que el saldo total ($3000) permite cubrir,
+para demostrar también el camino de rechazo controlado.
+
+Salida real obtenida al ejecutar:  python3 getJason.py -pagos sitedata.json
+
+  Pedido #1 | Token: token1 | Monto: $500.00 | Estado: OK        | Clave: ****-881A
+  Pedido #2 | Token: token2 | Monto: $500.00 | Estado: OK        | Clave: ****-881B
+  Pedido #3 | Token: token1 | Monto: $500.00 | Estado: OK        | Clave: ****-881A
+  Pedido #4 | Token: token2 | Monto: $500.00 | Estado: OK        | Clave: ****-881B
+  Pedido #5 | Token: token2 | Monto: $500.00 | Estado: OK        | Clave: ****-881B
+  Pedido #6 | Token: token2 | Monto: $500.00 | Estado: OK        | Clave: ****-881B
+  Pedido #7 | Token: -      | Monto: $500.00 | Estado: RECHAZADO | Clave: -
+
+  Saldos finales: token1 = $0.00 | token2 = $0.00
+
+Trazabilidad de la decisión automática:
+  Pedido 1 (turno=token1): token1 tenía 1000 → cubre, queda en 500.
+  Pedido 2 (turno=token2): token2 tenía 2000 → cubre, queda en 1500.
+  Pedido 3 (turno=token1): token1 tenía 500  → cubre, queda en 0.
+  Pedido 4 (turno=token2): token2 tenía 1500 → cubre, queda en 1000.
+  Pedido 5 (turno=token1): token1 tiene 0    → INSUFICIENTE, delega
+                            → token2 tiene 1000 → cubre, queda en 500.
+  Pedido 6 (turno=token2): token2 tiene 500  → cubre, queda en 0.
+  Pedido 7 (turno=token1): token1 tiene 0    → INSUFICIENTE, delega
+                            → token2 tiene 0  → INSUFICIENTE, no hay más
+                              manejadores → RECHAZADO (controlado, sin
+                              excepción de lenguaje).
+
+  Los pedidos 5 y 6 muestran la cadena delegando automáticamente hacia
+  token2 cuando token1 se agotó, incluso "fuera de turno" — exactamente
+  el comportamiento esperado de Chain of Responsibility combinado con
+  alternancia balanceada.
+
+Patrón Iterator — implementación explícita (no solo el iterador
+implícito de list), según lo exigido por el enunciado:
+
+  class PaymentLedgerIterator:
+      def __iter__(self): return self
+      def __next__(self):
+          if self._index >= len(self._records):
+              raise StopIteration
+          ...
+      def remaining(self) -> int: ...   # cuántos registros faltan recorrer
+
+  class PaymentLedger:
+      def __iter__(self) -> PaymentLedgerIterator:
+          return PaymentLedgerIterator(self._records)
+      def listado(self) -> None:
+          for record in self:           # usa el Iterator explícito
+              print(record)
+
+  Salida de la clase (punto e): cada PaymentRecord expone order_number,
+  token y amount como atributos públicos — exactamente "número de
+  pedido, token utilizado y monto del pago" solicitado por el enunciado.
+
+
+================================================================================
+PUNTO f — VERSIÓN 1.2
+================================================================================
+
+  VERSION = "1.2"
+
+  $ python3 getJason.py -v
+  getJason versión 1.2
+
+
+================================================================================
+PUNTO g — DOCUMENTACIÓN DEL PROGRAMA
+================================================================================
+
+El archivo conserva la carátula de copyright de TP7:
+
+  copyright UADER-FCyT-IS2©2024 todos los derechos reservados
+
+Y se documentó con:
+  - Docstring de módulo actualizado: describe el alcance TP6/TP7 (lectura
+    de JSON) y el nuevo alcance TP8 (ruteo de pagos), y deja explícita la
+    correspondencia "cadena de comando" → Chain of Responsibility.
+  - Docstring en cada clase nueva: Account, PaymentRequest, PaymentRecord,
+    AccountHandler, ConcreteAccountHandler, PaymentLedgerIterator,
+    PaymentLedger, PaymentRouter.
+  - Docstring en cada método: Args, Returns, Raises donde corresponde.
+  - Separadores de sección (SECCIÓN 1 a 7) para ubicar rápidamente:
+    lectura JSON (TP6/7), dominio de pagos, cadena de responsabilidad,
+    iterator, orquestador, CLI, punto de entrada.
+  - Comentarios inline en los puntos de decisión de diseño (selección
+    de implementación de IJsonReader, construcción de la cadena).
+
+
+================================================================================
+PUNTO h — VERIFICACIÓN CON PYLINT
+================================================================================
+
+  $ pylint getJason.py
+  Your code has been rated at 10.00/10
+
+  Resultado: 10.00/10 sin observaciones (requisito: ≥ 8). No fueron
+  necesarias correcciones adicionales sobre la primera corrida.
+
+Verificación adicional (bonus, no exigida por el enunciado):
+
+  $ mypy getJason.py --strict
+  Success: no issues found in 1 source file
+
+  Se corrigieron 5 advertencias de tipado estricto detectadas por mypy
+  (anotación de retorno en __new__, anotación del atributo de clase
+  _instance, y una colisión de nombre de variable entre el modo -pagos
+  y el modo de recuperación de tokens en main(), resuelta renombrando
+  la variable local a payment_jsonfile). Estas correcciones no
+  modificaron el comportamiento funcional, solo la precisión de tipos.
+
+
+================================================================================
+CASOS DE PRUEBA
+================================================================================
+
+  ID     Descripción                                          Resultado
+  ─────────────────────────────────────────────────────────────────────────────
+  TC-01  CLI modo TP6/7: getJason.py sitedata.json             C598-ECF9-F0F7-881A  ✓
+  TC-02  CLI modo TP6/7: getJason.py sitedata.json token2      C598-ECF9-F0F7-881B  ✓
+  TC-03  CLI: getJason.py -v                                   getJason versión 1.2  ✓
+  TC-04  CLI: getJason.py (sin args)                           Uso + exit 1          ✓
+  TC-05  Branching by Abstraction en PaymentRouter:
+         Singleton vs Procedural inyectado, mismo resultado     Equivalentes: True    ✓
+  TC-06  Demo completa -pagos: 7 pedidos de $500                6 OK + 1 RECHAZADO    ✓
+  TC-07  Account.debit() con saldo insuficiente                ValueError controlado ✓
+  TC-08  PaymentRequest(0, 500.0) -> order_number inválido      ValueError controlado ✓
+  TC-09  PaymentRequest(1, -10.0) -> amount inválido             ValueError controlado ✓
+  TC-10  PaymentLedgerIterator: next()/remaining()/StopIteration Comportamiento correcto ✓
+  TC-11  JsonReaderSingleton: a is b                              True                  ✓
+
+  Resultado: 11/11 PASS
+
+
+================================================================================
+RESUMEN EJECUTIVO
+================================================================================
+
+  Punto  Tarea                                                      Estado
+  ─────────────────────────────────────────────────────────────────────────────
+  a      Análisis: decisión manual -> reglas automatizables          COMPLETO
+  b      Automatización: saldo suficiente + distribución balanceada  COMPLETO
+  c      Singleton integrado en PaymentRouter (nuevo componente)     COMPLETO
+  d      Cadena de Responsabilidad: token1 ($1000) / token2 ($2000)  COMPLETO
+  e      7 pagos de $500 ruteados + listado cronológico (Iterator)   COMPLETO
+  f      Versión 1.2                                                 COMPLETO
+  g      Documentación completa (docstrings + carátula copyright)    COMPLETO
+  h      pylint 10.00/10 (requisito: ≥ 8)                            COMPLETO
+
+Artefactos entregados:
+  getJason_v1.2.py          Programa completo (lectura JSON + ruteo de pagos)
+  sitedata.json             Archivo de datos (sin modificaciones)
+  TP8_Memoria_Tecnica.txt   Este informe
+
+================================================================================
+  Fin del documento
+================================================================================
