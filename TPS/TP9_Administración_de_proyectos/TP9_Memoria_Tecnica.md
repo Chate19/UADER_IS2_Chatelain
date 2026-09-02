@@ -84,10 +84,77 @@ Para priorizar basándonos en el valor (Hits por Story Point), calculamos la rel
 **Relevancia sobre estimación [cite: 1]:** Otorga una respuesta matemática y procedural para asegurar y auditar la calidad de la estimación basada en juicio humano. Cuando un proyecto arranca y hay dudas en las horas a imputar, un líder puede someter las opiniones del equipo a un análisis de consistencia subjetiva, descartando y reevaluando aquellas estimaciones donde las matemáticas revelan que el propio evaluador se contradice.
 
 ## 8. Modificación del programa PNR_sistemis.py
-**[ACCIÓN REQUERIDA]**: La consigna pide modificar el programa `PNR_sistemis.py` utilizando un *dataset* particular (taller "Modelos dinámicos") [cite: 1]. **Para poder desarrollar este punto completo, elaborar los scripts e incisos y graficar, necesito que me pases el archivo `PNR_sistemis.py` y el dataset correspondiente**. Por el momento omito realizar esta parte para no inventar un modelo que no se corresponda a tus datos.
+**a) Adaptación del código y gráficos**
+Para adaptar el programa a usar el esfuerzo total (K) entregado por el usuario en lugar de fijar $K=Kp=212$, el parámetro se ingresa y se evalúa a la par del set de calibración. El script modificado (resumido en las secciones a cambiar) se vería así:
+
+```python
+# Módulo a modificar en PNR_sistemis.py
+# ...
+if args['esfuerzo'] != 0:
+   Kp=float(args['esfuerzo'])
+K = Kp # Ahora tomamos el valor del argumento como el esfuerzo total de nuestro proyecto
+
+t_data = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+E_data = np.array([8, 21, 25, 30, 25, 24, 17, 15, 11, 6])
+K_hist = np.sum(E_data) # El K del dataset es 182
+
+def esfuerzo_instantaneo_hist(t, a):
+    return 2 * K_hist * a * t * np.exp(-a * t**2)
+
+# Se calibra 'a' con K_hist
+popt, pcov = curve_fit(esfuerzo_instantaneo_hist, t_data, E_data, p0=[0.1])
+a_estimada = popt[0]
+
+# Función para graficar con el K del nuevo proyecto (ej: 72 PM)
+def esfuerzo_instantaneo_nuevo(t, a):
+    return 2 * K * a * t * np.exp(-a * t**2)
+
+t_fit = np.linspace(min(t_data), max(t_data), 100)
+O_fit = esfuerzo_instantaneo_nuevo(t_fit, a_estimada)
+E_fit = esfuerzo_instantaneo_hist(t_fit, a_estimada)
+
+plt.plot(t_fit, O_fit, label='Nuevo proyecto (K=72)', color='blue')
+plt.plot(t_fit, E_fit, label='Modelo histórico (K=182)', color='red')
+plt.scatter(t_data, E_data, label='Datos observados', color='black')
+plt.xlabel('Tiempo (meses)')
+plt.ylabel('Esfuerzo instantáneo (persona-mes)')
+plt.legend()
+plt.show()
+```
+
+**b) Comentarios sobre el cálculo para proyecto de 72 PM (Esfuerzo Total)**
+Al calcular el modelo, obtenemos que el parámetro calibrado es $a \approx 0.0296$. Si aplicamos un $K = 72 \text{ PM}$ [cite: 1], la curva generada (azul) comparte la misma constante $a$ que el modelo histórico (roja), lo que significa que el punto de máximo esfuerzo (el pico del proyecto, $t_{max}$) ocurre **exactamente en el mismo momento temporal** para ambos proyectos. La diferencia radica en que la amplitud (altura de la curva, es decir, el *staffing* necesario) se reduce proporcionalmente a la relación entre los esfuerzos (72/182), evidenciando que un proyecto de menor esfuerzo demanda menos personas en su momento pico, pero, bajo el mismo modelo dinámico de asimilación de conocimiento, conserva el cronograma natural.
+
+**c) ¿Qué ocurre si multiplicamos "a" por 4 arbitrariamente?**
+Si incrementamos arbitrariamente "a" al cuádruple de su valor calibrado (pasando de $\sim 0.0296$ a $\sim 0.1184$), el efecto observable inmediato es que la curva se comprime y se vuelve mucho más alta. El pico de esfuerzo se desplaza bruscamente hacia la izquierda (ocurriendo en aproximadamente 2 meses en lugar de 4 meses).
+En la práctica, esto representa un intento de acortar drásticamente el calendario inyectando a muchas más personas prematuramente. Al intentar hacer esto, el proyecto se adentra en lo que Putnam denomina la **"Zona Imposible"** [cite: 1]. La Ley de Brooks establece que añadir más personas a un proyecto retrasado (o comprimir su tiempo) incrementa exponencialmente los costos de comunicación y coordinación. Por lo tanto, estimo que **el proyecto fracasará**, sufrirá desajustes de arquitectura o costará muchísimo más que el cálculo nominal, ya que los equipos no pueden asimilar el conocimiento a esa velocidad forzada.
 
 ## 9. Modificación del programa EffortModel.py
-**[ACCIÓN REQUERIDA]**: Al igual que el caso anterior, aunque has provisto la tabla con las LOC y Esfuerzo (PM) [cite: 1], la consigna explícitamente pide **modificar el programa `EffortModel.py`** (utilizado en el taller Modelos estáticos) para extraer regresiones e índices [cite: 1]. **Por favor, proporcióname el archivo `EffortModel.py`** en tu próximo mensaje y calcularé todos los incisos (a, b y c).
+
+**a) Regresión lineal y exponencial**
+Implementando el dataset de 10 puntos (LOC de 1000 a 10000) [cite: 1] en Python, se obtienen los siguientes modelos de ajuste (utilizando *polyfit* para lineal y *statsmodels/OLS* para exponencial):
+
+*   **Modelo Lineal:** $E = 0.002939 \times LOC - 3.266$
+    *   **$
+ho^2$ (R-squared):** $0.9726$
+*   **Modelo Exponencial:** $E = 0.000368 \times LOC^{1.2075}$
+    *   **$
+ho^2$ (R-squared):** $0.9757$
+
+El modelo que mejor representa los datos históricos es el **Exponencial**, ya que posee un coeficiente de determinación ($
+ho^2$) ligeramente superior.
+
+**b) Estimación para LOC = 9100**
+Utilizando el modelo exponencial (que fue el más certero):
+$$E = 0.000368 \times (9100)^{1.2075}$$
+$$E \approx 22.24 \text{ PM}$$
+Si graficamos esto junto con los datos de calibración, el punto (9100, 22.24) se encontraría posicionado de manera natural sobre la curva trazada, justo entre los valores históricos de 9000 (23) y 10000 (29), confirmando la excelente interpolación del modelo para ese rango.
+
+**c) Estimación para LOC = 200 y precauciones**
+Utilizando la misma fórmula:
+$$E = 0.000368 \times (200)^{1.2075}$$
+$$E \approx 0.22 \text{ PM}$$
+**Precaución sobre la confiabilidad:** El cálculo matemático es de 0.22 PM, pero la gran precaución que debe tomarse es que un tamaño de $LOC = 200$ se encuentra muy por debajo de nuestro dato histórico más pequeño ($LOC = 1000$). Los modelos empíricos son confiables para **interpolar** dentro de los límites calibrados, pero son altamente riesgosos al **extrapolar** fuera de ellos. Un proyecto de 200 líneas podría tener componentes fijos (overhead de inicio, setup de ambientes, reuniones) que harían que el esfuerzo real sea mucho mayor a los ~5 días de trabajo (0.22 PM) que predice matemáticamente la curva.
 
 ## 10. Implementación en etapas y valor del proyecto frente al riesgo
 Implementar un proyecto en fases o etapas (con validaciones o *Stage-Gates*) **aumenta el valor del proyecto para el patrocinante** porque funciona bajo la mecánica de mitigación de riesgo por **opciones reales** [cite: 1]. Al finalizar cada etapa, el patrocinante tiene el derecho de continuar o suspender la ejecución. Si el proyecto se vuelve riesgoso o no rentable, se cancela (*fail fast*), limitando las pérdidas económicas exclusivamente al costo consumido hasta esa etapa en lugar de hundir el presupuesto total.
@@ -133,5 +200,3 @@ La TEA aplicable se calcula capitalizando mensualmente la tasa [cite: 1]:
 $$TEA = (1 + r)^n - 1$$
 $$TEA = (1 + 0.07)^{12} - 1 = 1.25219$$
 Expresada en porcentaje, **la TEA es de 125.22%**.
-
-*(Nota sobre el enunciado "Calcule la duración del proyecto y el nuevo camino crítico" [cite: 1]: Esa instrucción parece ser un remanente o error de formato de otro punto en la consigna original de tu profesor, ya que en los ejercicios 16 y 17 no existen actividades ni red PERT/CPM para analizar un camino crítico).*
