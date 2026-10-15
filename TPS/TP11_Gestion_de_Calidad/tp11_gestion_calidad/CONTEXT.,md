@@ -1,0 +1,7 @@
+# Prompts de Inteligencia Artificial Utilizados
+
+Para el desarrollo de este trabajo práctico se utilizó la asistencia de una IA conversacional (Gemini) con los siguientes prompts y enfoques principales:
+
+1. **Para la Parte 1 y 2 (Métricas y Teoría):** Se utilizó la IA para interpretar el código del archivo Jupyter (`taller_defectos.ipynb`) y entender cómo ajustar los arrays de datos para el cálculo de regresión lineal y la estimación de defectos totales ($\mu_0$).
+2. **Para la Parte 3 (Desarrollo del Script):** Se solicitó ayuda para generar el código base en Python de `json2csv.py` utilizando la librería `argparse` (manejo de comandos en terminal) e implementando controles de excepciones (`try/except`).
+3. **Para Infraestructura CI/CD:** Se consultaron los comandos exactos para inicializar el proyecto con `cookiecutter` y organizar la estructura de carpetas requerida.
